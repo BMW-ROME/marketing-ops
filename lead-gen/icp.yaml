@@ -1,0 +1,41 @@
+# lead-gen/icp.yaml
+# Ideal Customer Profile -- defines who Bright Data AI Lead Generator should
+# search for and how OpenAI should score/qualify results.
+#
+# This mirrors the niches already defined in ../brand_identity.yaml so the
+# lead-gen tool targets the same wedge as the content/outreach strategy,
+# rather than drifting into an unrelated audience.
+
+target_personas:
+  - label: "SaaS explainer / product demo buyers"
+    description: >
+      Marketing or content leads at SaaS companies who commission explainer
+      videos or product demo voiceovers.
+    signals:
+      - "SaaS company with a product demo or explainer video on their site"
+      - "Actively hiring for content marketing / video production roles"
+      - "Recent product launch or funding announcement (higher likelihood of budget)"
+  - label: "Course creators / edtech"
+    description: >
+      Independent course creators or edtech companies needing narration for
+      business/finance/education content.
+    signals:
+      - "Publishes courses on Udemy, Teachable, Kajabi, or similar"
+      - "Channel or site with existing video-based course content"
+  - label: "Wellness / premium brand films"
+    description: >
+      Wellness, meditation, or premium brand-film producers needing a calm,
+      hypnotic voice.
+    signals:
+      - "Wellness/meditation app or brand with video content"
+      - "Agency producing brand films for premium/lifestyle clients"
+
+exclude:
+  - "Companies primarily seeking free/unpaid work (e.g. 'exposure only' gigs)"
+  - "Marketplaces themselves (Voices.com, Voice123, Fiverr, etc.) -- not a target persona, they are a channel"
+
+scoring_notes: >
+  Bright Data AI Lead Generator uses OpenAI to score scraped leads against
+  this ICP. Favor leads matching multiple signals within one persona over
+  leads matching a single weak signal across personas. Update this file as
+  the wedge/niche decision in brand_identity.yaml evolves.
