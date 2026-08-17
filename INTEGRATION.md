@@ -9,108 +9,130 @@ which must remain isolated from brand/public-facing logic.
 
 Prevent brand drift across three parallel initiatives:
 
-1. **YouTube engine** (`youtube-engine` repo) — 7 channels + Freestyle mode
+1. **YouTube engine** (`youtube-engine` repo) -- 7 channels + Freestyle mode
 2. **n8n automation pipeline** (local n8n instance)
 3. **Voice-acting brand** (Voices.com, Voice123, future landing page)
 
-Each of these has been built/rebuilt somewhat independently. Without a shared
-reference, each surface risks inventing its own tone, copy, and positioning.
+## Status: youtube-engine integration -- COMPLETE (as of 2026-08-17)
+
+Full chain confirmed live end-to-end:
+
+- `config/brand_loader.py` -- fetches `brand_identity.yaml` from this repo,
+  with local cache + built-in default fallback.
+- `config/.env.brand.template` -- `GITHUB_TOKEN` + `BRAND_IDENTITY_BRANCH` vars.
+- `core/brand_aware_prompts.py` -- single-call wrapper exposing
+  `get_script_style_block()`, `get_seo_style_block()`, `get_video_cta_text()`,
+  `get_pinned_comment_cta()`.
+- `core/script_writer.py` -- wired (commit a8ae6de): adds brand voice/tone to
+  the system prompt via `get_script_style_block()`.
+- `core/seo_optimizer.py` -- wired (commit a8ae6de): adds brand voice/tone to
+  the SEO prompt, and appends the lead-gen CTA to the video description and
+  pinned comment via `get_video_cta_text()` / `get_pinned_comment_cta()`.
+  Skips CTA injection if lead_capture.yaml's CTA is still an unconfigured
+  placeholder. Both wired via try/except so a marketing-ops fetch failure
+  never blocks video generation.
+- Verified by the implementing agent across three paths: brand-absent,
+  brand-present, and placeholder-skip.
+
+Every video this pipeline generates now automatically uses brand tone in
+scripts and SEO copy, and appends the real lead-gen CTA
+(`thee3litesolutions@zohomail.com`, per `lead_capture.yaml`) to descriptions
+and pinned comments.
+
+## Decision: channel-level tone uniformity (RESOLVED 2026-08-17)
+
+**Decision: uniform tone across all 7 channels**, at least for now.
+
+Rationale: `brand_aware_prompts.py` feeds the same `voice_tone` block from
+`brand_identity.yaml` into every script/SEO call regardless of which of the
+7 channels (or Freestyle mode) is generating content. No per-channel
+override mechanism exists in `config/channels.py` today, and introducing
+one would require a new config schema, a decision about which niches map to
+which channels, and rework of `brand_aware_prompts.py` to accept a
+channel-id parameter -- none of which is justified yet without evidence
+that uniform tone is underperforming.
+
+Revisit this if/when:
+- Channels are differentiated enough (e.g. one is explicitly comedic, one
+  explicitly clinical/technical) that a single tone block feels wrong for
+  some of them, or
+- Data (view retention, comments, subscriber growth) suggests tone mismatch
+  is hurting specific channels.
+
+If revisited, the extension point is `brand_aware_prompts.get_script_style_block()`
+and `get_seo_style_block()` -- add an optional `channel_id` parameter that
+looks up a per-channel override section in `brand_identity.yaml` (to be
+added, e.g. under a new `channel_overrides:` key) and falls back to the
+global `voice_tone` block when no override exists for that channel.
+
+## ElevenLabs voice model ID (STILL OPEN)
+
+`core/voice_clone.py` and `core/voice_gen.py` exist and are unit-tested
+against a fake client (9 test cases). As of 2026-08-17, **no live
+ElevenLabs voice model ID has been confirmed or recorded**. This requires:
+
+1. An active ElevenLabs account (paid tier needed for voice cloning).
+2. A real voice sample uploaded and cloned via the ElevenLabs dashboard or
+   API, producing a `voice_id`.
+3. That `voice_id` recorded here and wired into `core/voice_clone.py` /
+   `core/voice_gen.py`'s configuration (likely via `.env`, e.g.
+   `ELEVENLABS_VOICE_ID=`).
+
+**Action needed from the account owner:** confirm whether an ElevenLabs
+account/clone already exists outside of this codebase (e.g. created
+manually via their dashboard) before assuming this needs to be built from
+scratch. If it exists, provide the `voice_id` to record here. If it
+doesn't exist yet, this is a manual step (record audio samples, upload to
+ElevenLabs, clone) that no agent can complete without your voice and an
+ElevenLabs account -- it cannot be automated end-to-end.
+
+- ElevenLabs voice model ID: _(not yet recorded -- pending account owner confirmation)_
+
+## Landing page URL (STILL OPEN)
+
+`lead_capture.yaml`'s `landing_page_url` remains blank. Per the earlier
+90-day growth plan, this is the single highest-leverage missing piece for
+the overall lead-gen strategy -- it's the anchor point that GEO, social,
+YouTube CTAs, and marketplace profiles should all point back to, rather than
+routing traffic to a bare email address indefinitely.
+
+Until this exists, `core/brand_aware_prompts.py` correctly falls back to
+`fallback_contact_method` (thee3litesolutions@zohomail.com), so nothing is
+broken -- but the funnel is weaker than it will be once a real landing page
+exists (no case studies, no niche-specific service pages, no
+schema markup for GEO/AI-citation purposes).
+
+**Action needed:** build the landing page (see the earlier 90-day plan:
+headline, bio, 3-5 demos, offers, contact form, schema markup) and set
+`landing_page_url` in `lead_capture.yaml` once live. This is a build task,
+not a config task -- no agent can invent your actual hosted page.
 
 ## What lives here
 
-- `brand_identity.yaml` — canonical tone, bio, niches, language rules. The
-  single source of truth for all external-facing copy.
-- `lead-funnel/` *(planned)* — n8n workflow spec for the lead intake pipeline
-  (form -> auto-reply -> CRM -> notification -> follow-up).
-- `content/` *(planned)* — content calendar, outreach templates, niche wedge
-  decisions for the 90-day growth plan.
-
-## Status: youtube-engine integration (updated 2026-08-17)
-
-The following have been pushed directly to `youtube-engine` to wire it to
-this repo:
-
-- `config/brand_loader.py` — fetches `brand_identity.yaml` from this repo via
-  raw GitHub content API, with local cache + built-in default fallback.
-  Never raises; safe to call unconditionally from pipeline stages.
-- `config/.env.brand.template` — adds `GITHUB_TOKEN` and
-  `BRAND_IDENTITY_BRANCH` vars needed for the loader to fetch live (this repo
-  is private, so anonymous raw fetches will fail without a token).
-- `BRAND_INTEGRATION_SNIPPET.md` — exact copy-in code for wiring
-  `get_brand_identity()` / `get_voice_tone_descriptors()` /
-  `get_language_rules()` / `get_primary_niches()` into
-  `core/script_writer.py` (Stage 1, GPT-4o script generation) and
-  `core/seo_optimizer.py` (Stage 8, GPT-4o SEO metadata generation).
-  **Not yet applied** — those two files were mid-edit by another agent
-  fixing integration bugs (missing `content_db.init_db()`, mismatched
-  `ChatClient` protocol shapes) as of the same day, so the snippet was left
-  as a doc rather than a blind overwrite.
-
-### ElevenLabs voice cloning — CONFIRMED EXISTING (resolves prior open item)
-
-`youtube-engine` already has voice-cloning infrastructure in place:
-
-- `core/voice_clone.py` (added 2026-08-13) — "ElevenLabs voice cloning setup,
-  tested with fake client (9 test cases)."
-- `core/voice_gen.py` (added 2026-08-13, Stage 2 of the pipeline) — Edge-TTS
-  and ElevenLabs voice synthesis, tested with a fake synthesizer +
-  concatenator.
-
-Both are unit-tested against fake/mock clients, not yet confirmed wired to a
-real ElevenLabs account or a real cloned voice model ID. **Action needed:**
-confirm whether a live ElevenLabs voice model ID exists for the actual brand
-voice, and if so, record it below so YouTube narration and any future
-automated audio content use the same voice asset as the Voices.com/Voice123
-voice-acting brand.
-
-- ElevenLabs voice model ID: _(not yet recorded — pending confirmation)_
-
-## Instructions for the YouTube engine agent
-
-- Read `brand_identity.yaml` before generating any channel description,
-  video title/description copy, or narration script tone parameters.
-- Wire `config/channels.py` in `youtube-engine` to import or reference the
-  `voice_tone`, `language_rules`, and `niches` sections here, rather than
-  hardcoding tone per channel.
-- Apply `BRAND_INTEGRATION_SNIPPET.md` to `core/script_writer.py` and
-  `core/seo_optimizer.py` once those files are stable (see status above).
-- If `core/voice_clone.py` is connected to a real ElevenLabs voice, record
-  the model ID in this file's "ElevenLabs voice cloning" section above —
-  reference `identity` and `voice_tone` fields in `brand_identity.yaml` for
-  consistency.
-- Do not introduce new tone descriptors or taglines locally — propose
-  additions to `brand_identity.yaml` instead.
-
-## Instructions for the n8n pipeline agent
-
-- Any workflow that sends external-facing text (lead auto-replies, outreach
-  emails, YouTube comment/DM responses) should pull subject lines, greeting
-  style, and signature copy from `brand_identity.yaml`.
-- Keep trading-related workflows (TradeStation, FTMO, Alpaca) in their own
-  namespace/credentials, fully separate from any workflow that touches this
-  repo's brand content.
-- When the lead-funnel workflow is built, mirror its spec into
-  `lead-funnel/` here so there's a durable record outside the n8n instance
-  itself.
+- `brand_identity.yaml` -- canonical tone, bio, niches, language rules.
+- `lead_capture.yaml` -- CTA copy, intake questions, funnel destination config.
+- `TOOLS.md` -- lead-gen tool stack decision log (OpenSDR, Bright Data,
+  Enverif, Bricks, UnifAPI).
+- `lead-gen/` -- Bright Data AI Lead Generator scaffold, qualification via
+  local Ollama models (not OpenAI).
+- `INTEGRATION.md` -- this file.
 
 ## Non-goals
 
 - This repo does not manage trading logic, credentials, or strategies.
-- This repo does not replace marketplace profiles (Voices.com/Voice123) —
+- This repo does not replace marketplace profiles (Voices.com/Voice123) --
   it defines what those profiles (and everything else) should say.
+- Voice123 is explicitly excluded as a funnel/fallback destination (decided
+  2026-08-17) -- see `lead_capture.yaml` notes.
 
-## Open items
+## Remaining open items (updated 2026-08-17)
 
-- Confirm whether channel-level tone should be fully uniform (all 7 channels
-  match `brand_identity.yaml` exactly) or niche-adapted per channel while
-  keeping the same core descriptors. Default until decided: niche-adapted,
-  core descriptors preserved.
-- ~~Decide on and record the ElevenLabs voice model ID once a voice clone is
-  finalized~~ — infrastructure confirmed existing (`core/voice_clone.py`,
-  `core/voice_gen.py`); still need the actual live model ID recorded once
-  connected to a real ElevenLabs account.
-- Generate a fine-grained GitHub PAT (read-only, scoped to this repo) and add
-  it to `youtube-engine`'s real `.env` so `config/brand_loader.py` fetches
-  live instead of falling back to its built-in default.
-- Apply `BRAND_INTEGRATION_SNIPPET.md` to `core/script_writer.py` and
-  `core/seo_optimizer.py` once those files are no longer mid-edit.
+1. **ElevenLabs voice model ID** -- needs account owner to confirm/provide
+   (see section above). Cannot be automated.
+2. **Landing page** -- needs to be built and its URL added to
+   `lead_capture.yaml` (see section above). Cannot be automated end-to-end.
+3. ~~Channel-level tone uniformity~~ -- RESOLVED: uniform tone adopted, see
+   decision section above.
+4. `lead-gen/lead_generator.py` needs a real Bright Data dataset ID and a
+   rotated `BRIGHT_DATA_API_TOKEN` (the previously shared token should be
+   treated as compromised and rotated) before it can run against live data.
