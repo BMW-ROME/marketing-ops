@@ -1,0 +1,81 @@
+# brand_identity.yaml
+# Canonical brand identity — single source of truth.
+# All downstream systems (youtube-engine, n8n pipeline, voice-acting profiles,
+# outreach/lead-funnel copy) MUST reference this file instead of hardcoding
+# tone, voice, or copy locally.
+
+identity:
+  name: "Tyrie Braxton"
+  role: "Versatile Voice Actor"
+  location: "Laurel, Maryland, US"
+
+voice_tone:
+  primary_descriptors:
+    - versatile
+    - deep
+    - warm
+    - hypnotic
+  register: "conversational, narration, and character-driven"
+  delivery_notes: >
+    Should read as an authentic, original human presence — never generic,
+    never obviously AI-written. Confident but warm; calm authority rather
+    than hype or salesy energy.
+
+canonical_copy:
+  headline: "Versatile Voice Actor with a Deep, Warm, Hypnotic Tone"
+  bio_short: >
+    A fresh, versatile voice with a deep, warm, and hypnotic tone, backed by
+    a strong work ethic and comfort across conversational, narration, and
+    character-driven reads.
+  tagline_options:
+    - "Deep. Warm. Hypnotic. Versatile."
+    - "The voice that keeps them listening."
+
+niches:
+  primary:
+    - "SaaS explainer videos and product demos"
+    - "Narration for business/finance/education content and courses"
+    - "Calm, hypnotic reads for wellness, meditation, and premium brand films"
+  secondary:
+    - "Commercial / conversational reads"
+    - "Character-driven / narrative reads"
+
+language_rules:
+  do:
+    - "Use specific, outcome-oriented language (what the buyer gets, not just 'voiceover')"
+    - "Reference niche-specific use cases explicitly"
+    - "Keep copy original, plain-spoken, and human"
+    - "Reuse canonical_copy fields verbatim across platforms for consistency"
+  dont:
+    - "Do not use generic AI-marketing phrases (e.g. 'unlock', 'supercharge', 'game-changer')"
+    - "Do not present as a marketplace-only talent (Voices.com/Voice123 are channels, not the identity)"
+    - "Do not let any single channel/workflow invent its own tone independent of this file"
+
+platforms:
+  voice_marketplaces:
+    - name: "Voices.com"
+      status: "active — Guest tier"
+      role: "secondary channel: social proof + inbound auditions"
+    - name: "Voice123"
+      status: "active — profile matched to Voices.com"
+      role: "secondary channel: social proof + inbound auditions"
+  youtube:
+    repo: "youtube-engine"
+    channels: 7
+    modes: ["standard", "freestyle"]
+    integration_point: "config/channels.py — channel narration tone + script-writing prompts should reference voice_tone and language_rules from this file"
+  automation:
+    tool: "n8n (local instance)"
+    integration_points:
+      - "Lead-intake funnel auto-reply copy"
+      - "YouTube comment/DM triage responses"
+      - "Outreach email templates"
+    exclusions:
+      - "Trading workflows (TradeStation -> n8n -> FTMO, Alpaca) are OUT OF SCOPE for this brand file — keep fully isolated"
+
+usage_instructions: >
+  Any agent or workflow producing external-facing copy (video scripts, video
+  descriptions, email replies, outreach messages, profile bios) should load
+  this file first and derive tone/copy from it. If a required field is
+  missing, add it here rather than inventing local values, so drift does not
+  occur across channels.
