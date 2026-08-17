@@ -1,0 +1,51 @@
+# lead_capture.yaml
+# Defines the CTA / lead-capture copy blocks that any content surface
+# (YouTube video descriptions, pinned comments, end screens, outreach
+# emails) should use to funnel viewers/listeners toward a real inquiry.
+#
+# This complements brand_identity.yaml -- brand_identity defines HOW to
+# sound; lead_capture defines WHERE to send people and WHAT to ask them.
+# Both should be read together by any content-generation stage.
+
+funnel:
+  primary_destination: "landing_page"  # placeholder until home base site exists
+  landing_page_url: ""  # fill in once the landing page from the 90-day plan is live
+  fallback_destination: "voice123_profile"  # used until landing_page_url is set
+  fallback_url: ""  # Voice123 public profile URL
+
+youtube_description_cta:
+  short: >
+    Need a voice for your next project? I specialize in deep, warm,
+    versatile voiceover for explainer videos, narration, and brand content.
+    Get a quote: {primary_or_fallback_url}
+  long: >
+    Looking for a voice actor with a deep, warm, and hypnotic tone for your
+    next SaaS explainer, course narration, or brand film? I bring
+    versatility across conversational, narration, and character-driven
+    reads. Reach out for a quote or sample: {primary_or_fallback_url}
+
+pinned_comment_cta:
+  short: >
+    Voice work inquiries welcome -- link in description.
+
+end_screen_cta:
+  text: "Need this voice for your project?"
+  subtext: "Get a quote -- link in description"
+
+intake_questions:
+  # Mirrors the n8n lead-funnel spec (form -> auto-reply -> CRM) discussed
+  # separately -- kept here so YouTube-driven leads ask the same questions
+  # as marketplace/outreach-driven leads, for consistent triage.
+  - "What type of project is this? (explainer / narration / commercial / course / other)"
+  - "Approximate script length or word count?"
+  - "Timeline / deadline?"
+  - "Budget range (if known)?"
+  - "Where will this be used? (YouTube, internal training, paid ad, etc.)"
+
+usage_notes: >
+  Do NOT hardcode this CTA text directly into seo_optimizer.py or
+  script_writer.py. Load it the same way as brand_identity.yaml (see
+  youtube-engine/config/brand_loader.py) so a single edit here propagates
+  everywhere. Leave `landing_page_url` blank until the home-base landing
+  page is live; downstream consumers should fall back to
+  `fallback_url` (Voice123) when `landing_page_url` is empty.
