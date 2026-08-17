@@ -11,7 +11,7 @@ funnel:
   primary_destination: "landing_page"  # placeholder until home base site exists
   landing_page_url: ""  # fill in once the landing page from the 90-day plan is live
   fallback_destination: "direct_contact"  # used until landing_page_url is set
-  fallback_contact_method: ""  # e.g. email address or contact form -- NOT a marketplace profile
+  fallback_contact_method: "thee3litesolutions@zohomail.com"
   notes: >
     Voice123 is explicitly NOT used as a funnel destination or fallback --
     decided 2026-08-17. Marketplace profiles (Voices.com/Voice123) remain
