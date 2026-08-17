@@ -10,19 +10,26 @@
 funnel:
   primary_destination: "landing_page"  # placeholder until home base site exists
   landing_page_url: ""  # fill in once the landing page from the 90-day plan is live
-  fallback_destination: "voice123_profile"  # used until landing_page_url is set
-  fallback_url: ""  # Voice123 public profile URL
+  fallback_destination: "direct_contact"  # used until landing_page_url is set
+  fallback_contact_method: ""  # e.g. email address or contact form -- NOT a marketplace profile
+  notes: >
+    Voice123 is explicitly NOT used as a funnel destination or fallback --
+    decided 2026-08-17. Marketplace profiles (Voices.com/Voice123) remain
+    secondary inbound channels per brand_identity.yaml, but outbound CTAs
+    (YouTube descriptions, etc.) should never point traffic back into a
+    marketplace. Point to the home-base landing page once live, or a direct
+    contact method (email/contact form) in the interim.
 
 youtube_description_cta:
   short: >
     Need a voice for your next project? I specialize in deep, warm,
     versatile voiceover for explainer videos, narration, and brand content.
-    Get a quote: {primary_or_fallback_url}
+    Get a quote: {primary_or_fallback_contact}
   long: >
     Looking for a voice actor with a deep, warm, and hypnotic tone for your
     next SaaS explainer, course narration, or brand film? I bring
     versatility across conversational, narration, and character-driven
-    reads. Reach out for a quote or sample: {primary_or_fallback_url}
+    reads. Reach out for a quote or sample: {primary_or_fallback_contact}
 
 pinned_comment_cta:
   short: >
@@ -35,7 +42,7 @@ end_screen_cta:
 intake_questions:
   # Mirrors the n8n lead-funnel spec (form -> auto-reply -> CRM) discussed
   # separately -- kept here so YouTube-driven leads ask the same questions
-  # as marketplace/outreach-driven leads, for consistent triage.
+  # as outreach-driven leads, for consistent triage.
   - "What type of project is this? (explainer / narration / commercial / course / other)"
   - "Approximate script length or word count?"
   - "Timeline / deadline?"
@@ -48,4 +55,5 @@ usage_notes: >
   youtube-engine/config/brand_loader.py) so a single edit here propagates
   everywhere. Leave `landing_page_url` blank until the home-base landing
   page is live; downstream consumers should fall back to
-  `fallback_url` (Voice123) when `landing_page_url` is empty.
+  `fallback_contact_method` (a direct email or contact form -- not a
+  marketplace profile) when `landing_page_url` is empty.
