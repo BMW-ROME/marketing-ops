@@ -1,0 +1,30 @@
+# Environment / secrets
+.env
+.env.*
+!.env.template
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Lead generation outputs (contain contact/PII data - never commit)
+lead-gen/output/
+lead-gen/data/
+lead-gen/*.csv
+lead-gen/*.json
+!lead-gen/LEAD_REVIEW_TEMPLATE.csv
+!lead-gen/icp.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
