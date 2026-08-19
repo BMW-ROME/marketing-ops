@@ -25,7 +25,7 @@ a free-tier VM so scraping/qualification work leaves your laptop.
 ```bash
 cp lead-gen/.env.template .env   # fill in BRIGHT_DATA_API_TOKEN (rotated!)
 docker compose up -d --build
-docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull phi4-mini   # default qualification model
 ```
 
 Full runbook, host options, backups, and troubleshooting:

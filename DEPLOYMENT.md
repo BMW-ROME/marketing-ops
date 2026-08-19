@@ -22,13 +22,16 @@ Persistent data lives in named volumes: `marketing-ops_ollama-models`,
 
 ## Choosing a host
 
-Ollama is the sizing constraint: `llama3.1:8b` wants ~8 GB RAM + a few GB
-for the model files. Options, honest ranking:
+Ollama is the sizing constraint, but the default model keeps it modest:
+`phi4-mini` (~2.5 GB) needs roughly 2-4 GB of RAM for inference. An
+8b-class model (`llama3.1:8b` or larger) wants ~8 GB RAM + a few GB for
+model files, which is heavier and not the default. Options, honest
+ranking:
 
 | Option | Cost | Works? | Notes |
 |---|---|---|---|
-| Oracle Cloud Always Free VM (AMD 4 OCPU / 24 GB RAM) | Free | **Yes** | The only genuinely free option big enough to run 8b-class models comfortably. Deploy Ubuntu 24.04 LTS, install Docker, follow Quick start. ARM 4 OCPU/24 GB also works. |
-| Google Cloud free tier (e2-micro, 1 GB RAM) | Free | Marginal | Too small for 8b models. Only realistic with a 1.5b-class model (`qwen2.5:1.5b`) -- not recommended. |
+| Oracle Cloud Always Free VM (AMD 4 OCPU / 24 GB RAM) | Free | **Yes** | The only genuinely free option big enough to run 8b-class models comfortably. Deploy Ubuntu 24.04 LTS, install Docker, follow Quick start. ARM 4 OCPU/24 GB also works. With the default `phi4-mini` model, smaller hosts become viable too. |
+| Google Cloud free tier (e2-micro, 1 GB RAM) | Free | Marginal | Too small for 8b models; even `phi4-mini` (~2.5 GB) is tight on 1 GB RAM -- not recommended. |
 | Streamlit Community Cloud / Railway / Render free tier | Free | **No** | Cannot run Ollama as a sidecar; the app hard-stops without it. |
 | A cheap VPS (Hetzner, etc.) | ~4-8 USD/mo | Yes | Fine if you outgrow free tiers. |
 | Your laptop (for dev only) | Local | Yes | `docker compose up -d` works locally too, but the point of this stack is moving off it. |
@@ -56,7 +59,7 @@ cp lead-gen/.env.template .env
 
 docker compose up -d --build
 
-docker compose exec ollama ollama pull llama3.1:8b   # first time only
+docker compose exec ollama ollama pull phi4-mini          # first time only
 ```
 
 Verify:
@@ -78,7 +81,7 @@ Everything is driven by the `.env` file next to `compose.yaml`
 |---|---|---|
 | `BRIGHT_DATA_API_TOKEN` | leadgen | **Required**; `compose up` fails fast with a clear error if missing |
 | `BRIGHT_DATA_COLLECTOR_ID` | leadgen | Optional here (can be typed in the UI), recommended to set |
-| `OLLAMA_MODEL` | leadgen | Default `llama3.1:8b`; the app lists models actually pulled in Ollama, so it must match one you pulled |
+| `OLLAMA_MODEL` | leadgen | Default `phi4-mini:latest`; the app lists models actually pulled in Ollama, so it must match one you pulled |
 | `N8N_HOST` / `N8N_PROTOCOL` | n8n | Set before first n8n startup if you plan to reach it by domain name |
 
 Changing `.env` after first deploy: `docker compose up -d` again.
@@ -86,9 +89,9 @@ Changing `.env` after first deploy: `docker compose up -d` again.
 ## Ollama model management
 
 ```bash
-docker compose exec ollama ollama pull llama3.1:8b     # pull a model
-docker compose exec ollama ollama list                 # models present
-docker compose exec ollama ollama rm <model>           # free disk
+docker compose exec ollama ollama pull phi4-mini          # pull a model
+docker compose exec ollama ollama list                    # models present
+docker compose exec ollama ollama rm <model>              # free disk
 ```
 
 Models persist in the `ollama-models` volume across container recreation.
@@ -129,6 +132,9 @@ compose up -d`.
 ## Security checklist
 
 - [ ] Bright Data token rotated (any version ever shown in a chat = compromised)
+      Note: the token was also committed to git history (commit `dad70cc`,
+      since removed from the working file). Rotation-only was chosen -- no
+      history rewrite -- so treat that key as burned permanently.
 - [ ] Token lives only in the host `.env` -- never in git, never in the image
 - [ ] Host firewall exposes only 22, 8501, 5678 (or put everything behind a
       reverse proxy / VPN; do not expose 11434 -- Ollama has no auth)

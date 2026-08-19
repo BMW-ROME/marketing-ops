@@ -6,7 +6,7 @@ This is the operating procedure for `lead-gen/lead_generator.py` (Bright Data di
 
 1. Python 3.10+ and PowerShell available locally.
 2. A **rotated** Bright Data API token and your Scraper Studio Collector ID (confirm rotation happened in the Bright Data dashboard before proceeding).
-3. [Ollama](https://ollama.com) installed and running locally with a pulled model (e.g. `ollama pull llama3.1:8b`).
+3. [Ollama](https://ollama.com) installed and running locally with a pulled model (e.g. `ollama pull phi4-mini`).
 4. Clone this repo locally:
    ```powershell
    git clone https://github.com/BMW-ROME/marketing-ops.git

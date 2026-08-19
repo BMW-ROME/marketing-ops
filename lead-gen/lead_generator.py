@@ -8,7 +8,7 @@ to run a published collector against target inputs, then scores each result
 against the Ideal Customer Profile in icp.yaml using a LOCAL Ollama model via
 LangChain, and surfaces a ranked, outreach-ready lead list via Streamlit.
 
-Qualification runs entirely on local Ollama models (e.g. llama3.1:8b,
+Qualification runs entirely on local Ollama models (e.g. phi4-mini,
 qwen2.5:7b) -- no OpenAI dependency, no per-token cost, no data leaving the
 local machine for the qualification step. Only the Bright Data scrape step
 calls an external API.
@@ -44,7 +44,7 @@ SECURITY NOTE:
 
 Requirements:
     - Ollama installed and running locally (default: http://localhost:11434)
-    - At least one model pulled, e.g.: `ollama pull llama3.1:8b`
+    - At least one model pulled, e.g.: `ollama pull phi4-mini`
 
 Usage:
     streamlit run lead_generator.py
@@ -68,7 +68,7 @@ BRIGHT_DATA_COLLECTOR_ID = os.environ.get("BRIGHT_DATA_COLLECTOR_ID", "")
 ICP_CONFIG_PATH = os.environ.get("ICP_CONFIG_PATH", "./icp.yaml")
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi4-mini:latest")
 
 BRIGHT_DATA_TRIGGER_URL = "https://api.brightdata.com/dca/trigger"
 BRIGHT_DATA_DATASET_URL = "https://api.brightdata.com/dca/dataset"
@@ -336,7 +336,7 @@ def render_app():
     if not available_models:
         st.warning(
             "Ollama is reachable but no models are pulled. Run e.g. "
-            "`ollama pull llama3.1:8b` first."
+            "`ollama pull phi4-mini` first."
         )
         st.stop()
 

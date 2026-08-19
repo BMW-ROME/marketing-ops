@@ -1,0 +1,3 @@
+# Line-ending safety for files that must stay LF even on Windows
+# (shell scripts die with CRLF: "#!/bin/sh\r" is not executable).
+*.sh text eol=lf

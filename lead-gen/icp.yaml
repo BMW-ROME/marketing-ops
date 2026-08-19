@@ -35,7 +35,9 @@ exclude:
   - "Marketplaces themselves (Voices.com, Voice123, Fiverr, etc.) -- not a target persona, they are a channel"
 
 scoring_notes: >
-  Bright Data AI Lead Generator uses OpenAI to score scraped leads against
-  this ICP. Favor leads matching multiple signals within one persona over
-  leads matching a single weak signal across personas. Update this file as
-  the wedge/niche decision in brand_identity.yaml evolves.
+  lead_generator.py scores scraped leads against this ICP using a LOCAL
+  Ollama model (default phi4-mini, JSON mode) -- no OpenAI dependency, no
+  lead data leaves the host for the qualification step. Favor leads matching
+  multiple signals within one persona over leads matching a single weak
+  signal across personas. Update this file as the wedge/niche decision in
+  brand_identity.yaml evolves.

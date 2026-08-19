@@ -27,7 +27,7 @@ services:
       - BRIGHT_DATA_API_TOKEN=${BRIGHT_DATA_API_TOKEN:?set BRIGHT_DATA_API_TOKEN in .env}
       - BRIGHT_DATA_COLLECTOR_ID=${BRIGHT_DATA_COLLECTOR_ID:-}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi4-mini:latest}
       - ICP_CONFIG_PATH=./icp.yaml
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
