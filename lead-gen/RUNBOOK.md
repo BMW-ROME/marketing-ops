@@ -25,6 +25,9 @@ This creates a virtual environment, installs dependencies, and copies `.env.temp
 - `BRIGHT_DATA_COLLECTOR_ID`
 - `OLLAMA_BASE_URL` / `OLLAMA_MODEL` if different from defaults.
 - `FALLBACK_CONTACT_METHOD` — your direct contact email.
+- `BRIGHT_DATA_INPUT_URLS` — comma-separated seed URLs for the headless CLI
+  (used by `./run.ps1` when no `--urls` / `--inputs-file` is passed; the
+  Streamlit UI takes URLs from its text area instead).
 
 Never commit `.env`. It is excluded via `.gitignore`.
 

@@ -19,7 +19,7 @@ services:
     container_name: marketing-ops-leadgen
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     depends_on:
       ollama:
         condition: service_healthy
@@ -41,7 +41,7 @@ services:
     container_name: marketing-ops-n8n
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
     volumes:
       - n8n-data:/home/node/.n8n
     environment:

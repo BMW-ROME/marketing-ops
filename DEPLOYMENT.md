@@ -11,11 +11,16 @@ changes, this doc changes with it.
 
 ## What you get
 
-| Service  | Container | Port (host) | Purpose |
+| Service  | Container | Port (host, loopback) | Purpose |
 |---|---|---|---|
-| leadgen  | `marketing-ops-leadgen` | 8501 | Streamlit UI: trigger Bright Data scrape, qualify via Ollama, ranked lead list |
+| leadgen  | `marketing-ops-leadgen` | 127.0.0.1:8501 | Streamlit UI: trigger Bright Data scrape, qualify via Ollama, ranked lead list |
 | ollama   | `marketing-ops-ollama`  | (internal) | Local LLM inference for qualification, models in a named volume |
-| n8n      | `marketing-ops-n8n`    | 5678 | Your existing automation layer (form -> auto-reply -> CRM). Hosted here only; workflows are imported separately, not scaffolded by this repo |
+| n8n      | `marketing-ops-n8n`    | 127.0.0.1:5678 | Your existing automation layer (form -> auto-reply -> CRM). Hosted here only; workflows are imported separately, not scaffolded by this repo |
+
+Both leadgen and n8n bind **only to 127.0.0.1 on the host** (loopback).
+They are NOT reachable from the public network -- you access them through
+an SSH tunnel (see below). This keeps the unauthenticated Streamlit UI and
+n8n off the open internet by default.
 
 Persistent data lives in named volumes: `marketing-ops_ollama-models`,
 `marketing-ops_n8n-data` (back up these -- see below).
@@ -66,11 +71,25 @@ Verify:
 
 ```bash
 curl -f http://localhost:8501/_stcore/health   # "ok" -- Streamlit is up
-curl -f http://localhost:5678                  # n8n UI
+curl -f http://localhost:5678                  # n8n responds
 docker compose logs -f leadgen                 # should show "Ollama is up. Starting app."
 ```
 
-Then open `http://<host-ip>:8501`.
+## Accessing the apps (SSH tunnel)
+
+The services bind to loopback, so from your laptop open an SSH tunnel to the
+host, then browse to local ports as if the host were your own machine:
+
+```bash
+# From your laptop (replace <host-ip> with the VM's address):
+ssh -L 8501:127.0.0.1:8501 -L 5678:127.0.0.1:5678 user@<host-ip>
+```
+
+- Lead-gen UI: `http://localhost:8501`
+- n8n UI: `http://localhost:5678`
+
+Keep the tunnel open while you work; close it when done. On Windows, the
+built-in `ssh` (OpenSSH client) supports `-L` the same way.
 
 ## Configuration
 
@@ -105,14 +124,15 @@ live in the `n8n-data` volume and are managed from the UI on port 5678.
 Migrating from a local n8n instance:
 1. On the old instance: export workflows (UI: Workflows -> ... -> Download,
    or the n8n CLI `export:workflow`).
-2. On the host: open `http://<host-ip>:5678`, create a new owner account,
-   and import the exported JSON.
+2. On the host: open n8n through the SSH tunnel
+   (`http://localhost:5678`), create a new owner account, and import the
+   exported JSON.
 
 If external services (webhooks from a landing page, email triggers) must
-reach n8n, it needs a public inbound path -- a domain with `N8N_HOST` set,
-plus a reverse proxy. Caddy is the recommended free option (TLS
-auto-provisioned, ~10 lines of config). Not included in compose by design
--- add it when you have a domain.
+reach n8n, change its compose bind to `0.0.0.0:5678` and put a reverse
+proxy with TLS in front -- Caddy is the recommended free option (auto TLS,
+~10 lines of config). Not included in compose by design -- add it only when
+you have a domain.
 
 ## Backups
 
@@ -136,8 +156,9 @@ compose up -d`.
       since removed from the working file). Rotation-only was chosen -- no
       history rewrite -- so treat that key as burned permanently.
 - [ ] Token lives only in the host `.env` -- never in git, never in the image
-- [ ] Host firewall exposes only 22, 8501, 5678 (or put everything behind a
-      reverse proxy / VPN; do not expose 11434 -- Ollama has no auth)
+- [ ] Host firewall exposes only SSH (22). leadgen and n8n bind to 127.0.0.1
+      and are reached via an SSH tunnel (above); never expose 11434 -- Ollama
+      has no auth
 - [ ] n8n owner account uses a strong password on first login
 - [ ] Root `.gitignore` is in place so `.env` cannot be committed by accident
       (`git check-ignore lead-gen/.env` should print the path)
