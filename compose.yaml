@@ -1,0 +1,54 @@
+name: marketing-ops
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: marketing-ops-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  leadgen:
+    build: ./lead-gen
+    container_name: marketing-ops-leadgen
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - BRIGHT_DATA_API_TOKEN=${BRIGHT_DATA_API_TOKEN:?set BRIGHT_DATA_API_TOKEN in .env}
+      - BRIGHT_DATA_COLLECTOR_ID=${BRIGHT_DATA_COLLECTOR_ID:-}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
+      - ICP_CONFIG_PATH=./icp.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: marketing-ops-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+
+volumes:
+  ollama-models:
+  n8n-data:

@@ -23,8 +23,20 @@ lead-gen/*.json
 !lead-gen/LEAD_REVIEW_TEMPLATE.csv
 !lead-gen/icp.yaml
 
+# Streamlit
+.streamlit/
+
+# Logs
+*.log
+
 # OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+.vs/
+*.iml
+
+# Local runtime data / backups
+data/
+backups/

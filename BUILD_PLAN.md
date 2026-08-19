@@ -5,7 +5,7 @@ brand layers. This is the single place to check "what's next" -- individual
 files (INTEGRATION.md, VOICE_CLONE_MIGRATION.md, TOOLS.md, lead_capture.yaml)
 hold the detail; this file holds the order and ownership.
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
 
 ## Ownership legend
 
@@ -57,6 +57,13 @@ This phase does not depend on Phase B/C and can proceed independently:
    credentials
 4. [account owner] Test the Streamlit app end-to-end once token + dataset
    ID exist -- NOT YET DONE
+5. [marketing-ops agent] Docker Compose deployment stack
+   (`compose.yaml`: leadgen + Ollama sidecar + n8n host-only container),
+   `lead-gen/Dockerfile`/entrypoint, root `.gitignore` (secrets protection),
+   `DEPLOYMENT.md` runbook, README deploy section -- DONE (2026-08-18),
+   pending account-owner verification on the chosen host (free-tier VM
+   recommended; see DEPLOYMENT.md); n8n here is host-only -- workflows are
+   imported separately, not scaffolded (workflow build remains Phase E)
 
 ## Phase E -- Deferred / not yet scheduled
 
@@ -64,7 +71,9 @@ This phase does not depend on Phase B/C and can proceed independently:
 - Enverif email verification (phase 3, conditional on having a real lead list)
 - UnifAPI GEO/citation monitoring (phase 4, conditional on landing page existing)
 - n8n lead-funnel workflow (form -> auto-reply -> CRM) -- referenced in
-  earlier planning but not yet scaffolded in any repo
+  earlier planning but not yet scaffolded in any repo. Note: as of 2026-08-18
+  n8n itself is hosted in the new Docker stack (host-only container, see
+  DEPLOYMENT.md); only the workflow build remains deferred
 - stunning-dollop / EliteAgents integration -- explicitly out of scope per
   account owner's instruction to focus on YouTube + lead-gen only
 
