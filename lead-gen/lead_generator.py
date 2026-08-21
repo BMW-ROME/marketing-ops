@@ -1,50 +1,17 @@
 """
 lead-gen/lead_generator.py
 
-Bright Data AI Lead Generator (phase 1 of the tool stack -- see ../TOOLS.md).
+AI Lead Generator: Scrape + Qualification Pipeline (Phase 1 of the tool stack).
 
-Uses Bright Data's Scraper Studio Collection API (/dca/trigger + /dca/dataset)
-to run a published collector against target inputs, then scores each result
-against the Ideal Customer Profile in icp.yaml using a LOCAL Ollama model via
-LangChain, and surfaces a ranked, outreach-ready lead list via Streamlit.
+Supports two scraping modes:
+  1. LOCAL: Playwright + Requests (free, no API key needed)
+  2. BRIGHT_DATA: Bright Data Scraper Studio (managed service, paid credits)
 
-Qualification runs entirely on local Ollama models (e.g. phi4-mini,
-qwen2.5:7b) -- no OpenAI dependency, no per-token cost, no data leaving the
-local machine for the qualification step. Only the Bright Data scrape step
-calls an external API.
+Qualification runs entirely on local Ollama models (e.g. phi4-mini, qwen2.5:7b)
+-- no OpenAI dependency, no per-token cost, no data leaving the local machine.
 
-API REFERENCE (see https://docs.brightdata.com/datasets/scraper-studio/quickstart):
-    1. POST /dca/trigger?collector={collector_id}&queue_next=1
-       Body: JSON array of input objects matching the collector's input
-       schema (commonly a "url" field, but can be any field the collector
-       defines). Response: {"collection_id": "j_..."}
-    2. GET /dca/dataset?id={collection_id}
-       Poll until the response is a JSON array (not a status object like
-       {"status": "building"}). That array is the scraped dataset.
-
-    NOTE: the trigger response field is called "collection_id", but every
-    other endpoint refers to the same value as "snapshot_id" -- they are the
-    same string under two names. This module uses "snapshot_id" internally
-    for consistency with the rest of the codebase.
-
-PREREQUISITES:
-    - A Bright Data account with a payment method on file
-    - An API token from https://brightdata.com/cp/setting (Account Settings -> API Tokens)
-    - A Collector ID (starts with "c_") from a scraper built in Bright Data's
-      Scraper Studio (CLI, AI Agent, or IDE) -- NOT a raw "dataset_id" as
-      earlier drafts of this file assumed. Build one at
-      https://brightdata.com/cp/scrapers before running this app.
-
-SECURITY NOTE:
-    BRIGHT_DATA_API_TOKEN is read from environment variables (via .env,
-    never committed) or Streamlit secrets. Never hardcode credentials in
-    this file. If a token is ever pasted into a chat, notebook, or
-    committed by mistake, rotate it immediately at
-    https://brightdata.com/cp/setting.
-
-Requirements:
-    - Ollama installed and running locally (default: http://localhost:11434)
-    - At least one model pulled, e.g.: `ollama pull phi4-mini`
+Local scraper is the default. To use Bright Data, set BRIGHT_DATA_API_TOKEN
+and BRIGHT_DATA_COLLECTOR_ID in .env.
 
 Usage:
     streamlit run lead_generator.py          # interactive UI (http://localhost:8501)
@@ -55,6 +22,7 @@ import argparse
 import csv
 import io
 import json
+import logging
 import os
 import sys
 import time
@@ -67,10 +35,22 @@ import streamlit as st
 import yaml
 from dotenv import load_dotenv
 
+# Optional: local scraper
+try:
+    from scrapers import scrape_urls_sync
+    LOCAL_SCRAPER_AVAILABLE = True
+except ImportError:
+    LOCAL_SCRAPER_AVAILABLE = False
+
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
+# Config
 BRIGHT_DATA_API_TOKEN = os.environ.get("BRIGHT_DATA_API_TOKEN", "")
 BRIGHT_DATA_COLLECTOR_ID = os.environ.get("BRIGHT_DATA_COLLECTOR_ID", "")
+USE_LOCAL_SCRAPER = os.environ.get("USE_LOCAL_SCRAPER", "true").lower() in ("true", "1", "yes")
+
 DEFAULT_ICP_CONFIG_PATH = str(Path(__file__).resolve().parent / "icp.yaml")
 ICP_CONFIG_PATH = os.environ.get("ICP_CONFIG_PATH", DEFAULT_ICP_CONFIG_PATH)
 
@@ -80,7 +60,7 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi4-mini:latest")
 BRIGHT_DATA_TRIGGER_URL = "https://api.brightdata.com/dca/trigger"
 BRIGHT_DATA_DATASET_URL = "https://api.brightdata.com/dca/dataset"
 BRIGHT_DATA_POLL_INTERVAL_SECONDS = 5
-BRIGHT_DATA_POLL_TIMEOUT_SECONDS = 300  # batch jobs can take several minutes
+BRIGHT_DATA_POLL_TIMEOUT_SECONDS = 300
 BRIGHT_DATA_MAX_RETRIES = 3
 
 TERMINAL_SNAPSHOT_STATUSES = {"failed", "error", "cancelled"}
@@ -120,13 +100,6 @@ def trigger_bright_data_scrape(
     Triggers a Bright Data Scraper Studio collector run and returns the
     snapshot_id (returned by the API as "collection_id") used to poll for
     results.
-
-    collector_id: the Bright Data Collector ID (starts with "c_"), from a
-                  scraper you built in Scraper Studio -- NOT a free-text
-                  query. Build one at https://brightdata.com/cp/scrapers.
-    inputs: list of input objects matching the collector's input schema.
-            Most collectors expect [{"url": "..."}], but check the
-            collector's "Inputs" tab for the exact schema it was built with.
     """
     if not token:
         raise RuntimeError(
@@ -183,7 +156,7 @@ def trigger_bright_data_scrape(
         except requests.exceptions.HTTPError as exc:
             last_exc = exc
             if resp.status_code >= 500:
-                time.sleep(2 ** attempt)  # exponential backoff: 1s, 2s, 4s
+                time.sleep(2 ** attempt)
                 continue
             raise
     raise RuntimeError(f"Bright Data trigger failed after {BRIGHT_DATA_MAX_RETRIES} attempts: {last_exc}")
@@ -197,8 +170,7 @@ def poll_bright_data_snapshot(
 ) -> List[Dict[str, Any]]:
     """
     Polls /dca/dataset until the snapshot is ready, then returns the scraped
-    records. The endpoint returns a status object (e.g. {"status": "building"})
-    while in progress, and a JSON array when ready.
+    records.
     """
     headers = {"Authorization": f"Bearer {token}"}
     start = time.monotonic()
@@ -221,9 +193,8 @@ def poll_bright_data_snapshot(
                 last_exc = exc
                 status = resp.status_code if resp is not None else 0
                 if 400 <= status < 500:
-                    # Non-retryable client error (401, 403, 404, ...)
                     raise
-                time.sleep(2 ** attempt)  # backoff: 1s, 2s, 4s
+                time.sleep(2 ** attempt)
         if last_exc is not None:
             raise last_exc
 
@@ -242,7 +213,7 @@ def poll_bright_data_snapshot(
 
 @st.cache_data(ttl=10, show_spinner=False)
 def check_ollama_available(base_url: str = OLLAMA_BASE_URL) -> bool:
-    """Quick health check that Ollama is running locally before wasting a scrape call."""
+    """Quick health check that Ollama is running locally."""
     try:
         resp = requests.get(f"{base_url}/api/tags", timeout=3)
         return resp.status_code == 200
@@ -256,17 +227,7 @@ def build_qualification_chain(
 ):
     """
     Builds a LangChain LCEL chain backed by a LOCAL Ollama model that scores a
-    scraped lead record against the ICP signals and returns a structured
-    qualification verdict.
-
-    Uses Ollama's JSON mode (format="json") rather than with_structured_output's
-    json_schema method, since json_schema support varies across locally-hosted
-    models -- JSON mode + explicit prompt formatting instructions is the more
-    portable approach across whatever model you have pulled (phi4-mini, llama3.1,
-    qwen2.5, mistral, etc.).
-
-    LCEL (prompt | llm | StrOutputParser) is used instead of the deprecated
-    LangChain LLMChain, which was removed from the main package in langchain 1.x.
+    scraped lead record against the ICP signals.
     """
     from langchain_ollama import ChatOllama
     from langchain_core.output_parsers import StrOutputParser
@@ -276,7 +237,7 @@ def build_qualification_chain(
         model=model,
         base_url=base_url,
         temperature=0,
-        format="json",  # JSON mode: constrains output to valid JSON
+        format="json",
     )
 
     prompt = ChatPromptTemplate.from_template(
@@ -365,22 +326,70 @@ def _parse_qualification(raw: str) -> Optional[Dict[str, Any]]:
     return parsed if isinstance(parsed, dict) else None
 
 
-def run_pipeline(
+def run_pipeline_local(
+    urls: List[str],
+    persona: Dict[str, Any],
+    model: str = OLLAMA_MODEL,
+) -> List[Dict[str, Any]]:
+    """Local scraper pipeline: scrape via Playwright/requests -> qualify via Ollama."""
+    if not LOCAL_SCRAPER_AVAILABLE:
+        raise RuntimeError(
+            "Local scraper not available. Install with: pip install playwright beautifulsoup4"
+        )
+    
+    records = scrape_urls_sync(urls)
+    records = [r for r in records if r.get("status") == "success"]
+    
+    chain = _get_qualification_chain(model)
+    return [qualify_lead(r, persona, chain) for r in records]
+
+
+def run_pipeline_bright_data(
     collector_id: str,
     inputs: List[Dict[str, Any]],
     persona: Dict[str, Any],
     model: str = OLLAMA_MODEL,
 ) -> List[Dict[str, Any]]:
-    """End-to-end: trigger scrape -> poll -> qualify each record locally via Ollama."""
+    """Bright Data pipeline: trigger scrape -> poll -> qualify via Ollama."""
     snapshot_id = trigger_bright_data_scrape(collector_id, inputs)
     records = poll_bright_data_snapshot(snapshot_id)
     chain = _get_qualification_chain(model)
     return [qualify_lead(r, persona, chain) for r in records]
 
 
+def run_pipeline(
+    urls: Optional[List[str]] = None,
+    collector_id: Optional[str] = None,
+    inputs: Optional[List[Dict[str, Any]]] = None,
+    persona: Optional[Dict[str, Any]] = None,
+    model: str = OLLAMA_MODEL,
+    use_local: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    End-to-end pipeline. Automatically selects scraper based on config.
+    
+    Args:
+        urls: URLs to scrape (for local scraper)
+        collector_id: Bright Data collector ID (for Bright Data)
+        inputs: Bright Data inputs (for Bright Data)
+        persona: ICP persona to score against
+        model: Ollama model to use
+        use_local: If True, prefer local scraper; if False, use Bright Data
+    """
+    if use_local and LOCAL_SCRAPER_AVAILABLE and urls:
+        return run_pipeline_local(urls, persona, model=model)
+    elif collector_id and inputs:
+        return run_pipeline_bright_data(collector_id, inputs, persona, model=model)
+    else:
+        raise RuntimeError(
+            "Invalid pipeline config. Provide either: "
+            "(urls + use_local=True) OR (collector_id + inputs + use_local=False)"
+        )
+
+
 @st.cache_resource
 def _get_qualification_chain(model: str, base_url: str = OLLAMA_BASE_URL):
-    """Cached qualification chain keyed by model/base_url so rebuilds are cheap."""
+    """Cached qualification chain keyed by model/base_url."""
     return build_qualification_chain(model=model, base_url=base_url)
 
 
@@ -405,30 +414,26 @@ def _normalize_url(value: str) -> str:
     return value
 
 
-def _parse_input_lines(raw_text: str, split_commas: bool = False) -> List[Dict[str, Any]]:
+def _parse_input_lines(raw_text: str, split_commas: bool = False) -> List[str]:
     """
-    Parses a block of lines (Streamlit textarea, --urls, --inputs-file) into the
-    input objects Bright Data expects. Normalizes URLs (adds https:// if the
-    scheme is missing), dedupes, and drops blank lines.
-
-    Defaults to the {"url": ...} shape -- adjust if your collector's input
-    schema uses different field names.
+    Parses a block of lines into clean URLs.
+    Normalizes URLs (adds https:// if missing), dedupes, and drops blank lines.
     """
     if split_commas:
         raw_text = raw_text.replace(",", "\n")
 
     seen = set()
-    inputs: List[Dict[str, Any]] = []
+    urls: List[str] = []
     for line in raw_text.splitlines():
         url = _normalize_url(line)
         if not url or url.lower() in seen:
             continue
         seen.add(url.lower())
-        inputs.append({"url": url})
-    return inputs
+        urls.append(url)
+    return urls
 
 
-def _parse_inputs_textarea(raw_text: str) -> List[Dict[str, Any]]:
+def _parse_inputs_textarea(raw_text: str) -> List[str]:
     """Backwards-compatible alias for _parse_input_lines."""
     return _parse_input_lines(raw_text)
 
@@ -444,14 +449,14 @@ def _pick(record: Dict[str, Any], keys: List[str], default: str = "") -> str:
 
 
 def _result_to_row(result: Dict[str, Any]) -> List[str]:
-    """Flattens one qualification result into a review-template-compatible CSV row."""
+    """Flattens one qualification result into a CSV row."""
     rec = result.get("lead_record", {})
     return [
         _pick(rec, ["name", "company", "company_name", "account_name", "business_name"]),
         _pick(rec, ["url", "website", "domain", "link", "site"]),
         _pick(rec, ["contact_name", "person", "first_name"]),
         _pick(rec, ["contact_role", "role", "job_title", "position", "title", "occupation"]),
-        _pick(rec, ["email", "contact_email", "linkedin", "linkedin_url", "linkedin_profile"]),
+        _pick(rec, ["email", "contact_email", "emails", "linkedin", "linkedin_url", "linkedin_profile"]),
         result.get("persona_label", ""),
         str(result.get("score", 0)),
         result.get("rationale", ""),
@@ -495,23 +500,15 @@ def _leads_csv_bytes(results: List[Dict[str, Any]]) -> str:
 
 
 def render_app():
-    st.set_page_config(page_title="Lead Generator (Bright Data + Local Ollama)", layout="wide")
+    st.set_page_config(page_title="Lead Generator (Playwright + Ollama)", layout="wide")
     st.title("Voice-Acting Brand -- Lead Generator")
+    
+    # Determine which scraper is active
+    scraper_mode = "Local (Playwright)" if USE_LOCAL_SCRAPER else "Bright Data"
     st.caption(
-        "Phase 1 of the lead-gen tool stack (see marketing-ops/TOOLS.md). "
-        "Scrapes via Bright Data Scraper Studio; qualifies locally via Ollama."
+        f"Phase 1 of the lead-gen tool stack (see marketing-ops/TOOLS.md). "
+        f"Scrapes via {scraper_mode}; qualifies locally via Ollama."
     )
-
-    if not BRIGHT_DATA_API_TOKEN:
-        st.error("Missing BRIGHT_DATA_API_TOKEN. Set it in lead-gen/.env before running.")
-        st.stop()
-    if _is_placeholder_token(BRIGHT_DATA_API_TOKEN):
-        st.error(
-            "BRIGHT_DATA_API_TOKEN is still the template placeholder "
-            "('your_bright_data_api_token_here'). Set the real rotated token "
-            "in lead-gen/.env -- never leave a placeholder."
-        )
-        st.stop()
 
     if not check_ollama_available():
         st.error(
@@ -544,48 +541,104 @@ def render_app():
     for s in persona.get("signals", []):
         st.write(f"- {s}")
 
-    collector_id = st.text_input(
-        "Bright Data Collector ID",
-        value=BRIGHT_DATA_COLLECTOR_ID,
-        help=(
-            "The Collector ID (starts with 'c_') from a scraper you built in "
-            "Bright Data's Scraper Studio (https://brightdata.com/cp/scrapers). "
-            "Not a free-text search query -- Scraper Studio collectors are "
-            "built against a specific input schema (commonly a list of URLs)."
-        ),
-    )
-    inputs_text = st.text_area(
-        "Input URLs (one per line)",
-        help=(
-            "Most collectors expect a list of target URLs. If your collector "
-            "uses a different input schema (e.g. a search keyword field), "
-            "adjust _parse_inputs_textarea() to match."
-        ),
-        height=150,
-    )
-
-    pipeline_running = st.session_state.get("pipeline_running", False)
-    if st.button("Run lead generation", type="primary", disabled=pipeline_running):
-        inputs = _parse_inputs_textarea(inputs_text)
-        if not collector_id or not inputs:
-            st.warning("Provide both a Collector ID and at least one input URL.")
+    # Local scraper mode: just ask for URLs
+    if USE_LOCAL_SCRAPER and LOCAL_SCRAPER_AVAILABLE:
+        inputs_text = st.text_area(
+            "Input URLs (one per line)",
+            help="URLs to scrape (uses Playwright for JS-heavy sites, requests for static).",
+            height=150,
+        )
+        
+        pipeline_running = st.session_state.get("pipeline_running", False)
+        if st.button("Run lead generation", type="primary", disabled=pipeline_running):
+            urls = _parse_inputs_textarea(inputs_text)
+            if not urls:
+                st.warning("Provide at least one URL.")
+                st.stop()
+            
+            st.session_state["pipeline_running"] = True
+            try:
+                with st.status(
+                    f"Scraping locally and qualifying with {selected_model}...",
+                    expanded=True,
+                ) as status:
+                    try:
+                        results = run_pipeline(
+                            urls=urls,
+                            persona=persona,
+                            model=selected_model,
+                            use_local=True,
+                        )
+                        status.update(label="Scrape & qualification complete.", state="complete")
+                    except Exception as exc:  # noqa: BLE001
+                        status.update(label=f"Pipeline failed: {exc}", state="error")
+                        st.session_state["pipeline_running"] = False
+                        st.stop()
+            finally:
+                st.session_state["pipeline_running"] = False
+    
+    # Bright Data mode: ask for Collector ID + URLs
+    else:
+        if not BRIGHT_DATA_API_TOKEN:
+            st.error("Missing BRIGHT_DATA_API_TOKEN. Set it in lead-gen/.env before running.")
             st.stop()
-        st.session_state["pipeline_running"] = True
-        try:
-            with st.status(
-                f"Scraping via Bright Data and qualifying locally with {selected_model}...",
-                expanded=True,
-            ) as status:
-                try:
-                    results = run_pipeline(collector_id, inputs, persona, model=selected_model)
-                    status.update(label="Qualification complete.", state="complete")
-                except Exception as exc:  # noqa: BLE001
-                    status.update(label=f"Pipeline failed: {exc}", state="error")
-                    st.session_state["pipeline_running"] = False
-                    st.stop()
-        finally:
-            st.session_state["pipeline_running"] = False
+        if _is_placeholder_token(BRIGHT_DATA_API_TOKEN):
+            st.error(
+                "BRIGHT_DATA_API_TOKEN is still the template placeholder. "
+                "Set the real rotated token in lead-gen/.env."
+            )
+            st.stop()
+        
+        collector_id = st.text_input(
+            "Bright Data Collector ID",
+            value=BRIGHT_DATA_COLLECTOR_ID,
+            help="The Collector ID (starts with 'c_') from Bright Data Scraper Studio.",
+        )
+        inputs_text = st.text_area(
+            "Input URLs (one per line)",
+            help="URLs to scrape via Bright Data Scraper Studio.",
+            height=150,
+        )
+        
+        pipeline_running = st.session_state.get("pipeline_running", False)
+        if st.button("Run lead generation", type="primary", disabled=pipeline_running):
+            urls = _parse_inputs_textarea(inputs_text)
+            if not collector_id or not urls:
+                st.warning("Provide both a Collector ID and at least one input URL.")
+                st.stop()
+            
+            # Convert to Bright Data input format
+            inputs = [{"url": url} for url in urls]
+            
+            st.session_state["pipeline_running"] = True
+            try:
+                with st.status(
+                    f"Scraping via Bright Data and qualifying with {selected_model}...",
+                    expanded=True,
+                ) as status:
+                    try:
+                        results = run_pipeline(
+                            collector_id=collector_id,
+                            inputs=inputs,
+                            persona=persona,
+                            model=selected_model,
+                            use_local=False,
+                        )
+                        status.update(label="Qualification complete.", state="complete")
+                    except Exception as exc:  # noqa: BLE001
+                        status.update(label=f"Pipeline failed: {exc}", state="error")
+                        st.session_state["pipeline_running"] = False
+                        st.stop()
+            finally:
+                st.session_state["pipeline_running"] = False
 
+    # Display results (common to both modes)
+    if "results" in st.session_state or True:  # Check if results exist in session
+        try:
+            results
+        except NameError:
+            return
+        
         results = [r for r in results if not r.get("excluded")]
         results.sort(key=lambda r: r.get("score", 0), reverse=True)
 
@@ -614,37 +667,18 @@ def render_app():
 
 
 def run_cli(args: argparse.Namespace) -> None:
-    """Headless pipeline: trigger scrape -> poll -> qualify -> write CSV."""
-    token = args.token or os.environ.get("BRIGHT_DATA_API_TOKEN", BRIGHT_DATA_API_TOKEN)
-    collector_id = args.collector_id or os.environ.get(
-        "BRIGHT_DATA_COLLECTOR_ID", BRIGHT_DATA_COLLECTOR_ID
-    )
-
-    if not token:
-        raise SystemExit("BRIGHT_DATA_API_TOKEN is not set. Add it to lead-gen/.env.")
-    if _is_placeholder_token(token):
-        raise SystemExit(
-            "BRIGHT_DATA_API_TOKEN is still the template placeholder. "
-            "Set the real rotated token in lead-gen/.env."
-        )
-    if not collector_id:
-        raise SystemExit(
-            "No Collector ID provided. Pass --collector-id or set "
-            "BRIGHT_DATA_COLLECTOR_ID in lead-gen/.env."
-        )
-    if _is_placeholder_token(collector_id):
-        raise SystemExit(
-            "BRIGHT_DATA_COLLECTOR_ID is still the template placeholder "
-            "(your_collector_id_here). Set your real Collector ID."
-        )
-
-    raw_inputs = args.urls or ""
+    """Headless pipeline: scrape -> qualify -> write CSV."""
+    model = args.model or OLLAMA_MODEL
+    
+    # Parse URLs from args or env
+    raw_urls = args.urls or ""
     if args.inputs_file:
-        raw_inputs += "\n" + Path(args.inputs_file).read_text(encoding="utf-8")
-    if not raw_inputs.strip():
-        raw_inputs = os.environ.get("BRIGHT_DATA_INPUT_URLS", "")
-    inputs = _parse_input_lines(raw_inputs, split_commas=True)
-    if not inputs:
+        raw_urls += "\n" + Path(args.inputs_file).read_text(encoding="utf-8")
+    if not raw_urls.strip():
+        raw_urls = os.environ.get("BRIGHT_DATA_INPUT_URLS", "")
+    
+    urls = _parse_input_lines(raw_urls, split_commas=True)
+    if not urls:
         raise SystemExit(
             "No input URLs provided. Pass --urls 'example.com,other.com', "
             "--inputs-file FILE, or set BRIGHT_DATA_INPUT_URLS in .env."
@@ -657,12 +691,35 @@ def run_cli(args: argparse.Namespace) -> None:
     if persona is None:
         raise SystemExit(f"Persona '{label}' not found in icp.yaml.")
 
-    model = args.model or OLLAMA_MODEL
-    print(
-        f"Triggering Bright Data scrape for {len(inputs)} input(s), "
-        f"persona '{label}', model '{model}' ..."
-    )
-    results = run_pipeline(collector_id, inputs, persona, model=model)
+    # Use local scraper if enabled
+    if USE_LOCAL_SCRAPER and LOCAL_SCRAPER_AVAILABLE:
+        print(
+            f"Scraping locally for {len(urls)} URL(s), "
+            f"persona '{label}', model '{model}' ..."
+        )
+        results = run_pipeline(urls=urls, persona=persona, model=model, use_local=True)
+    else:
+        # Use Bright Data
+        token = args.token or BRIGHT_DATA_API_TOKEN
+        collector_id = args.collector_id or BRIGHT_DATA_COLLECTOR_ID
+        
+        if not token or _is_placeholder_token(token):
+            raise SystemExit("BRIGHT_DATA_API_TOKEN not set or is placeholder.")
+        if not collector_id or _is_placeholder_token(collector_id):
+            raise SystemExit("BRIGHT_DATA_COLLECTOR_ID not set or is placeholder.")
+        
+        inputs = [{"url": url} for url in urls]
+        print(
+            f"Triggering Bright Data scrape for {len(urls)} URL(s), "
+            f"persona '{label}', model '{model}' ..."
+        )
+        results = run_pipeline(
+            collector_id=collector_id,
+            inputs=inputs,
+            persona=persona,
+            model=model,
+            use_local=False,
+        )
 
     results = [r for r in results if not r.get("excluded")]
     results.sort(key=lambda r: r.get("score", 0), reverse=True)
@@ -684,8 +741,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="lead_generator.py",
         description=(
-            "Bright Data AI Lead Generator: scrape via Scraper Studio, qualify "
-            "locally via Ollama against icp.yaml, write a ranked CSV."
+            "AI Lead Generator: scrape via local Playwright or Bright Data, "
+            "qualify locally via Ollama against icp.yaml, write a ranked CSV."
         ),
     )
     parser.add_argument("--collector-id", default=None, help="Bright Data Collector ID (c_...).")
